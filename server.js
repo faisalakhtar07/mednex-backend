@@ -14,6 +14,7 @@ import subscriptionRoutes from './routes/subscriptionRoutes.js'
 import doctorRoutes from './routes/doctorRoutes.js'
 import appointmentRoutes from './routes/appointmentRoutes.js'
 import doctorDashboardRoutes from './routes/doctorDashboardRoutes.js'
+import pushRoutes from './routes/pushRoutes.js'
 import { startSubscriptionExpiryScheduler } from './utils/subscriptionScheduler.js'
 
 // The Doctor Appointment System's own routes: doctorRoutes.js (public
@@ -40,6 +41,7 @@ app.use('/api/subscriptions', subscriptionRoutes)
 app.use('/api/doctors', doctorRoutes)
 app.use('/api/appointments', appointmentRoutes)
 app.use('/api/doctor-dashboard', doctorDashboardRoutes)
+app.use('/api/push', pushRoutes)
 
 app.use((req, res) => res.status(404).json({ message: 'Route not found' }))
 

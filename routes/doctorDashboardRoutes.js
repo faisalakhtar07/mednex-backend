@@ -4,6 +4,7 @@ import DoctorProfile from '../models/DoctorProfile.js'
 import Notification from '../models/Notification.js'
 import { protect, requireRole } from '../middleware/auth.js'
 import { attachDoctor, requireOwnedDoc } from '../middleware/doctorAuth.js'
+import { sendPushToUser } from '../utils/sendPush.js'
 
 const router = express.Router()
 // Every route here is doctor-tenant-scoped: 'doctor' or 'doctor_staff' only,
@@ -51,6 +52,11 @@ router.put('/appointments/:id/confirm', async (req, res) => {
     type: 'appointment_confirmed',
     relatedAppointment: appointment._id,
   })
+  sendPushToUser(appointment.patientId, {
+    title: 'Appointment Confirmed',
+    body: `Your appointment with ${req.doctor.name} is confirmed — your token number is ${appointment.tokenNumber}.`,
+    url: '/appointments',
+  }).catch(() => {})
   res.json(appointment)
 })
 
@@ -72,6 +78,11 @@ router.put('/appointments/:id/reject', async (req, res) => {
     type: 'appointment_rejected',
     relatedAppointment: appointment._id,
   })
+  sendPushToUser(appointment.patientId, {
+    title: 'Appointment Declined',
+    body: `Your appointment request with ${req.doctor.name} was declined${appointment.rejectionReason ? `: ${appointment.rejectionReason}` : '.'}`,
+    url: '/appointments',
+  }).catch(() => {})
   res.json(appointment)
 })
 

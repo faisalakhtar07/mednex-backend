@@ -4,6 +4,7 @@ import DoctorProfile from '../models/DoctorProfile.js'
 import Notification from '../models/Notification.js'
 import User from '../models/User.js'
 import { protect, requireRole } from '../middleware/auth.js'
+import { sendPushToUser } from '../utils/sendPush.js'
 
 const router = express.Router()
 
@@ -53,6 +54,11 @@ router.post('/', protect, requireRole('customer'), async (req, res) => {
         type: 'appointment_requested',
         relatedAppointment: appointment._id,
       })
+      sendPushToUser(u._id, {
+        title: 'New Appointment Request',
+        body: `${appointment.patientName} requested an appointment for ${day.toLocaleDateString('en-IN')}.`,
+        url: '/doctor',
+      }).catch(() => {}) // push is best-effort — never block the booking on it
     }
 
     res.status(201).json(appointment)

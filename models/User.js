@@ -53,6 +53,13 @@ const userSchema = new mongoose.Schema(
     doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'DoctorProfile', default: null, index: true },
     active: { type: Boolean, default: true }, // admin or the owning doctor can deactivate a staff account
     addresses: [addressSchema],
+    // Email-based password reset (routes/authRoutes.js: /password/forgot +
+    // /password/reset). We store a SHA-256 hash of the reset token, never
+    // the token itself — same pattern as a password hash, so a DB leak
+    // alone can't be used to reset accounts. Token is single-use and
+    // expires after 15 minutes.
+    resetPasswordTokenHash: { type: String, default: null, select: false },
+    resetPasswordExpires: { type: Date, default: null, select: false },
   },
   { timestamps: true }
 )

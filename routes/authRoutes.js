@@ -1,7 +1,9 @@
 import express from 'express'
+import crypto from 'crypto'
 import User from '../models/User.js'
 import { protect, generateToken } from '../middleware/auth.js'
 import { normalizeIdentifier } from '../utils/validators.js'
+import { sendEmail, isEmailConfigured } from '../config/email.js'
 
 const router = express.Router()
 
@@ -67,32 +69,76 @@ router.post('/login', async (req, res) => {
   }
 })
 
-// --- Forgot password — NO verification step, by explicit product decision.
-// A user enters their mobile number and immediately sets a new password.
-// This is a deliberate simplification (no OTP anywhere in the app anymore)
-// and it does trade away a real security property: anyone who knows a
-// customer's mobile number can reset that account's password. There's no
-// way to fully close that gap without reintroducing some form of
-// verification (OTP, security question, etc.) — flagging this plainly here
-// since it's a product/security tradeoff, not a bug.
+// --- Forgot password — email link + SMTP, replacing the earlier
+// no-verification "enter your mobile, set a new password" flow (that
+// version let anyone who knew a customer's mobile number take over their
+// account — a real security gap). Now: user submits their email, we email
+// them a one-time link valid for 15 minutes, and only that link can set a
+// new password. Works for any role that has an email on file (customer,
+// doctor, doctor_staff, admin).
 
-// POST /api/auth/password/reset-direct { mobile, newPassword }
-router.post('/password/reset-direct', async (req, res) => {
+// POST /api/auth/password/forgot { email }
+router.post('/password/forgot', async (req, res) => {
+  // Always the same response whether or not the email is registered, so
+  // this endpoint can't be used to enumerate accounts.
+  const genericResponse = { message: 'If an account exists for that email, a reset link has been sent.' }
   try {
-    const { mobile, newPassword } = req.body
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' })
+    const { email } = req.body
+    if (!email) return res.status(400).json({ message: 'Email is required' })
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ message: 'Password reset email is not configured on the server yet. Contact support.' })
     }
-    const normalizedMobile = normalizeIdentifier(mobile, 'mobile')
-    const user = await User.findOne({ mobile: normalizedMobile, role: 'customer' })
+    const normalizedEmail = normalizeIdentifier(email, 'email')
+    const user = await User.findOne({ email: normalizedEmail })
+    if (!user) return res.json(genericResponse)
+
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    user.resetPasswordTokenHash = crypto.createHash('sha256').update(rawToken).digest('hex')
+    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
+    await user.save()
+
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`
+    await sendEmail({
+      to: user.email,
+      subject: 'Reset your MedNex password',
+      html: `
+        <p>Hi ${user.name || ''},</p>
+        <p>Click the link below to set a new MedNex password. This link expires in 15 minutes and can only be used once.</p>
+        <p><a href="${resetUrl}">${resetUrl}</a></p>
+        <p>If you didn't request this, you can safely ignore this email.</p>
+      `,
+    })
+    res.json(genericResponse)
+  } catch (err) {
+    // Never leak SMTP/internal errors to the caller — an attacker probing
+    // this endpoint shouldn't learn anything from a failure either.
+    console.error('Forgot-password email failed:', err.message)
+    res.json(genericResponse)
+  }
+})
+
+// POST /api/auth/password/reset { email, token, newPassword }
+router.post('/password/reset', async (req, res) => {
+  try {
+    const { email, token, newPassword } = req.body
+    if (!email || !token || !newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Email, token, and a password of at least 6 characters are required' })
+    }
+    const normalizedEmail = normalizeIdentifier(email, 'email')
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+    const user = await User.findOne({
+      email: normalizedEmail,
+      resetPasswordTokenHash: tokenHash,
+      resetPasswordExpires: { $gt: new Date() },
+    }).select('+resetPasswordTokenHash +resetPasswordExpires')
     if (!user) {
-      // Same response whether or not the account exists, so this endpoint
-      // can't be used to enumerate registered mobile numbers.
-      return res.json({ message: 'If an account exists for that number, the password has been updated.' })
+      return res.status(400).json({ message: 'This reset link is invalid or has expired. Request a new one.' })
     }
     user.password = newPassword
+    user.resetPasswordTokenHash = null
+    user.resetPasswordExpires = null
     await user.save()
-    res.json({ message: 'If an account exists for that number, the password has been updated.' })
+    res.json({ message: 'Password updated — you can log in with your new password now.' })
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message })
   }
