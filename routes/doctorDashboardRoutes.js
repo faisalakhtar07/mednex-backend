@@ -75,6 +75,26 @@ router.put('/appointments/:id/reject', async (req, res) => {
   res.json(appointment)
 })
 
+// Advances req.doctor.currentServingToken to at least `tokenNumber`, for
+// TODAY only. Called whenever an appointment finishes (complete/no-show) so
+// the "now serving" counter — and every patient's "X ahead of you" — moves
+// forward even when the doctor never touches the separate "Call Next"
+// button on the Queue tab. Resets the day-rollover the same way
+// call-next does, so yesterday's count never leaks into today.
+async function advanceServingToken(doctor, appointmentDate, tokenNumber) {
+  const today = midnight(new Date())
+  const isSameDay = midnight(appointmentDate).getTime() === today.getTime()
+  if (!isSameDay || !tokenNumber) return
+  if (doctor.currentServingDate?.getTime() !== today.getTime()) {
+    doctor.currentServingToken = 0
+    doctor.currentServingDate = today
+  }
+  if (tokenNumber > doctor.currentServingToken) {
+    doctor.currentServingToken = tokenNumber
+    await doctor.save()
+  }
+}
+
 router.put('/appointments/:id/complete', async (req, res) => {
   const appointment = await requireOwnedDoc(Appointment, req.params.id, req.doctor._id, res)
   if (!appointment) return
@@ -83,6 +103,7 @@ router.put('/appointments/:id/complete', async (req, res) => {
   }
   appointment.status = 'completed'
   await appointment.save()
+  await advanceServingToken(req.doctor, appointment.date, appointment.tokenNumber)
   res.json(appointment)
 })
 
@@ -94,6 +115,7 @@ router.put('/appointments/:id/no-show', async (req, res) => {
   }
   appointment.status = 'no_show'
   await appointment.save()
+  await advanceServingToken(req.doctor, appointment.date, appointment.tokenNumber)
   res.json(appointment)
 })
 
