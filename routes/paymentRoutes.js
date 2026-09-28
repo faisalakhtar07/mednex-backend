@@ -41,17 +41,35 @@ router.get('/key', (req, res) => {
 // POST /api/payments/create-subscription-order
 router.post('/create-subscription-order', protect, requireRole('doctor'), attachDoctor, async (req, res) => {
   try {
+    const { subscriptionId } = req.body
+    const subscription = await Subscription.findOne({ _id: subscriptionId, doctorId: req.doctor._id, status: 'pending' })
+    if (!subscription) return res.status(404).json({ message: 'Pending subscription not found' })
+    const plan = await SubscriptionPlan.findById(subscription.planId)
+    if (!plan) return res.status(404).json({ message: 'Plan no longer exists' })
+
+    // Free plans (₹0) skip Razorpay entirely — Razorpay's API rejects
+    // zero-amount orders outright, so routing a ₹0 plan through
+    // orders.create() below would always fail. Activate it directly instead
+    // and tell the frontend there's no checkout to open.
+    if (plan.price <= 0) {
+      const now = new Date()
+      subscription.status = 'active'
+      subscription.startDate = now
+      subscription.expiryDate = new Date(now.getTime() + plan.durationDays * 24 * 60 * 60 * 1000)
+      subscription.paymentInformation = { ...subscription.paymentInformation, amount: 0, paidAt: now }
+      await subscription.save()
+      req.doctor.subscriptionStatus = 'active'
+      req.doctor.activeSubscriptionId = subscription._id
+      await req.doctor.save()
+      return res.json({ free: true, message: 'Free plan activated', subscription })
+    }
+
     const razorpay = getRazorpay()
     if (!razorpay) {
       return res.status(503).json({
         message: 'Online payments are not set up yet. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to the backend .env file, then restart the server.',
       })
     }
-    const { subscriptionId } = req.body
-    const subscription = await Subscription.findOne({ _id: subscriptionId, doctorId: req.doctor._id, status: 'pending' })
-    if (!subscription) return res.status(404).json({ message: 'Pending subscription not found' })
-    const plan = await SubscriptionPlan.findById(subscription.planId)
-    if (!plan) return res.status(404).json({ message: 'Plan no longer exists' })
 
     const razorpayOrder = await razorpay.orders.create({
       amount: Math.round(plan.price * 100), // paise
@@ -64,6 +82,7 @@ router.post('/create-subscription-order', protect, requireRole('doctor'), attach
     await subscription.save()
 
     res.json({
+      free: false,
       razorpayOrderId: razorpayOrder.id,
       amount: razorpayOrder.amount,
       currency: razorpayOrder.currency,
