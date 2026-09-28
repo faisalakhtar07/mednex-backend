@@ -46,6 +46,9 @@ router.delete('/plans/:id', protect, adminOnly, async (req, res) => {
 router.post('/mine', protect, requireRole('doctor'), attachDoctor, async (req, res) => {
   const plan = await SubscriptionPlan.findOne({ _id: req.body.planId, status: 'active' })
   if (!plan) return res.status(404).json({ message: 'Plan not found or no longer available' })
+  if (plan.isFreeTrial) {
+    return res.status(400).json({ message: 'Use the "Start 15-Day Free Trial" option for this plan, not regular checkout.' })
+  }
 
   const subscription = await Subscription.create({
     doctorId: req.doctor._id,
@@ -55,6 +58,61 @@ router.post('/mine', protect, requireRole('doctor'), attachDoctor, async (req, r
   req.doctor.subscriptionStatus = 'pending'
   await req.doctor.save()
   res.status(201).json(subscription)
+})
+
+// POST /api/subscriptions/start-free-trial — one-time, 15 days, ₹0, no
+// Razorpay involved at all (unlike a regular ₹0 plan, which still round-trips
+// through /create-subscription-order — see paymentRoutes.js's price<=0
+// bypass there). This is for brand-new doctors only: blocked once
+// hasUsedFreeTrial is true, and blocked if they already have an active
+// subscription (paid or trial).
+router.post('/start-free-trial', protect, requireRole('doctor'), attachDoctor, async (req, res) => {
+  try {
+    if (req.doctor.hasUsedFreeTrial) {
+      return res.status(400).json({ message: 'You have already used your free trial.' })
+    }
+    if (req.doctor.subscriptionStatus === 'active') {
+      return res.status(400).json({ message: 'You already have an active subscription.' })
+    }
+
+    // The trial plan is system-managed, not something an admin edits from
+    // the plan catalog — create it once, reuse it after. upsert avoids a
+    // race if two requests hit this at the very same moment.
+    const trialPlan = await SubscriptionPlan.findOneAndUpdate(
+      { isFreeTrial: true },
+      {
+        $setOnInsert: {
+          name: 'Free Trial (15 Days)',
+          description: 'Try MedNex free for 15 days — no payment required.',
+          price: 0,
+          durationDays: 15,
+          features: ['Full doctor profile listing', 'Appointment booking & token queue'],
+          status: 'active',
+          isFreeTrial: true,
+        },
+      },
+      { upsert: true, new: true }
+    )
+
+    const now = new Date()
+    const subscription = await Subscription.create({
+      doctorId: req.doctor._id,
+      planId: trialPlan._id,
+      status: 'active',
+      startDate: now,
+      expiryDate: new Date(now.getTime() + trialPlan.durationDays * 24 * 60 * 60 * 1000),
+      paymentInformation: { amount: 0, paidAt: now },
+    })
+
+    req.doctor.subscriptionStatus = 'active'
+    req.doctor.activeSubscriptionId = subscription._id
+    req.doctor.hasUsedFreeTrial = true
+    await req.doctor.save()
+
+    res.status(201).json({ message: '15-day free trial started', subscription })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
 })
 
 // PUT /api/subscriptions/mine/:id/activate — DEPRECATED, kept only to return

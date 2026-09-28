@@ -67,6 +67,11 @@ const doctorProfileSchema = new mongoose.Schema(
     ratingAvg: { type: Number, default: 0 },
     ratingCount: { type: Number, default: 0 },
 
+    // Once-per-doctor 15-day free trial (routes/subscriptionRoutes.js:
+    // POST /start-free-trial). True the moment they start it, even if that
+    // trial has since expired — so they can never start a second one.
+    hasUsedFreeTrial: { type: Boolean, default: false },
+
     // --- Live token queue (spec: token-queue system, not fixed time slots) ---
     // "Whose turn is it right now" for TODAY only — reset automatically the
     // first time it's touched on a new calendar day (see
