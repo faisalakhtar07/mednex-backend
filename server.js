@@ -15,7 +15,10 @@ import doctorRoutes from './routes/doctorRoutes.js'
 import appointmentRoutes from './routes/appointmentRoutes.js'
 import doctorDashboardRoutes from './routes/doctorDashboardRoutes.js'
 import pushRoutes from './routes/pushRoutes.js'
+import reviewRoutes from './routes/reviewRoutes.js'
+import favoriteRoutes from './routes/favoriteRoutes.js'
 import { startSubscriptionExpiryScheduler } from './utils/subscriptionScheduler.js'
+import { startAppointmentReminderScheduler } from './utils/appointmentReminderScheduler.js'
 
 // The Doctor Appointment System's own routes: doctorRoutes.js (public
 // search + a doctor's own profile/registration), appointmentRoutes.js
@@ -42,6 +45,8 @@ app.use('/api/doctors', doctorRoutes)
 app.use('/api/appointments', appointmentRoutes)
 app.use('/api/doctor-dashboard', doctorDashboardRoutes)
 app.use('/api/push', pushRoutes)
+app.use('/api/reviews', reviewRoutes)
+app.use('/api/favorites', favoriteRoutes)
 
 app.use((req, res) => res.status(404).json({ message: 'Route not found' }))
 
@@ -54,4 +59,5 @@ const PORT = process.env.PORT || 5000
 app.listen(PORT, () => {
   console.log(`🚀 MedNex API running on http://localhost:${PORT}`)
   startSubscriptionExpiryScheduler()
+  startAppointmentReminderScheduler()
 })

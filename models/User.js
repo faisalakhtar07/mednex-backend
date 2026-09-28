@@ -53,6 +53,9 @@ const userSchema = new mongoose.Schema(
     doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'DoctorProfile', default: null, index: true },
     active: { type: Boolean, default: true }, // admin or the owning doctor can deactivate a staff account
     addresses: [addressSchema],
+    // Doctors a customer has bookmarked (heart icon on DoctorCard/DoctorDetail)
+    // — see routes/favoriteRoutes.js. Only meaningful for role 'customer'.
+    favoriteDoctors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'DoctorProfile' }],
     // Email-based password reset (routes/authRoutes.js: /password/forgot +
     // /password/reset). We store a SHA-256 hash of the reset token, never
     // the token itself — same pattern as a password hash, so a DB leak

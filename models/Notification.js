@@ -12,7 +12,7 @@ const notificationSchema = new mongoose.Schema(
     // notification row, since that state changes every few minutes.
     type: {
       type: String,
-      enum: ['payment_success', 'subscription_expiring', 'subscription_expired', 'appointment_requested', 'appointment_confirmed', 'appointment_rejected', 'general'],
+      enum: ['payment_success', 'subscription_expiring', 'subscription_expired', 'appointment_requested', 'appointment_confirmed', 'appointment_rejected', 'appointment_reminder', 'general'],
       default: 'general',
     },
     relatedAppointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', default: null },

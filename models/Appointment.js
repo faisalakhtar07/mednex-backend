@@ -31,6 +31,14 @@ const appointmentSchema = new mongoose.Schema(
     tokenNumber: { type: Number, default: null },
     confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // the doctor or doctor_staff account that actioned it
     rejectionReason: { type: String, default: '' },
+    // Set true once the patient leaves a Review for this appointment — lets
+    // the frontend show/hide the "Rate this doctor" prompt without an extra
+    // lookup. The real source of truth is still the Review collection
+    // (unique on appointmentId), this is just a fast read-side flag.
+    reviewed: { type: Boolean, default: false },
+    // Set once the day-before reminder has gone out (utils/appointmentReminderScheduler.js),
+    // so the hourly job never sends the same reminder twice.
+    reminderSent: { type: Boolean, default: false },
 
     paymentInformation: {
       method: String, // 'qr' | 'online' | 'cash_at_clinic'
